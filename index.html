@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persistent Drawing</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            background-color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        nav {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+        }
+        nav a {
+            margin-right: 15px;
+            font-size: 18px;
+            cursor: pointer;
+            text-decoration: none;
+            color: black;
+        }
+        body.dark-mode {
+            background-color: black;
+        }
+        body.dark-mode nav a {
+            color: white;
+        }
+        #traceCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* Example text block (Hidden in light mode, visible in dark mode) */
+        .dark-text {
+            display: none;
+            position: absolute;
+            top: 50px;
+            left: 20px;
+            font-size: 20px;
+            color: white;
+            max-width: 600px;
+        }
+        body.dark-mode .dark-text {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a id="toggle-mode"><strong>☼</strong></a>
+    </nav>
+
+    <canvas id="traceCanvas"></canvas>
+
+    <!-- Example text (only appears in dark mode) -->
+    <div class="dark-text">
+        Like traditional webpages <br>This one tracks every cursor movement<br>
+        Unlike traditional webpages <br>This one does not hide it<br>
+        Instead, it traces all interactions <br>Making each visit_or unique<br>
+        Users leave a mark no matter what <br>Becoming co-creators<br>
+        Blurring the lines between <br>Design_er and consumer<br>
+        Asking what it means to be a <br>Person_al web_site<br>
+        <br>
+        This site was created by barrrish <br>For HCI 1<br>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('traceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let isDarkMode = false;
+        let drawingData = { light: null, dark: null }; // Store separate images
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+
+        let lastX = null, lastY = null;
+
+        // Function to save current drawing
+        function saveDrawing() {
+            drawingData[isDarkMode ? "dark" : "light"] = canvas.toDataURL();
+        }
+
+        // Function to load saved drawing
+        function loadDrawing() {
+            const img = new Image();
+            img.src = drawingData[isDarkMode ? "dark" : "light"];
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+            };
+        }
+
+        // Cursor leaves a continuous trace
+        function draw(e) {
+            if (lastX === null || lastY === null) {
+                lastX = e.clientX;
+                lastY = e.clientY;
+                return;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.clientX, e.clientY);
+            ctx.stroke();
+
+            lastX = e.clientX;
+            lastY = e.clientY;
+
+            saveDrawing(); // Save drawing after each stroke
+        }
+
+        document.addEventListener('mousemove', draw);
+
+        // Toggle dark mode and maintain separate drawings
+        document.getElementById('toggle-mode').addEventListener('click', () => {
+            saveDrawing();
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('dark-mode');
+            ctx.strokeStyle = isDarkMode ? "white" : "black";
+            loadDrawing();
+        });
+
+        // Handle canvas resize without losing drawings
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            loadDrawing();
+        });
+    </script>
+</body>
+</html>
