@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Propaganda Laboratory</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: black;
+      font-family: system-ui, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: white;
+      position: relative;
+      height: 200vh;
+    }
+
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background-color: transparent;
+      padding: 1vw;
+      z-index: 1001;
+      border-bottom: 1px solid transparent;
+      text-align: center;
+      font-size: 1vw;
+      transition: transform 0.3s ease;
+    }
+
+    header nav ul {
+      display: inline-flex;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      gap: 4rem;
+    }
+
+    header nav ul li a {
+      color: white;
+      text-decoration: none;
+      font-size: 2vw;
+      font-family: system-ui, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #content {
+      padding: 6rem 5vw 5vw 5vw;
+      max-width: 100%;
+      margin: 0 auto;
+      text-align: justify;
+      font-size: 2vw;
+      line-height: 1.5;
+    }
+
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      width: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .line {
+      position: absolute;
+      width: 100%;
+      height: 0px;
+      background-color: black;
+      opacity: 0;
+      transition: opacity 0.3s, height 0.3s;
+    }
+
+    #final-text {
+      position: fixed;
+      top: 0;
+      left: 0;
+      font-size: 2vw;
+      padding: 5vw;
+      background: black;
+      color: white;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+      margin: 0 auto;
+      line-height: 1.5;
+      text-align: justify;
+      width: 100%;
+    }
+
+    a {
+      color: lightblue;
+    }
+
+    /* MOBILE STYLES */
+    @media (max-width: 768px) {
+      header {
+        font-size: 4vw;
+      }
+
+      header nav ul {
+        flex-direction: column;
+        gap: 2vw;
+      }
+
+      header nav ul li a {
+        font-size: 5vw;
+      }
+
+      #content {
+        font-size: 5vw;
+        padding: 30vw 8vw 8vw 8vw; /* Extra top padding to avoid header overlap */
+      }
+
+      #final-text {
+        font-size: 5vw;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header with navigation -->
+<header id="main-header">
+  <nav>
+    <ul>
+      <li><a href="propagandalab.html">HOME</a></li>
+      <li><a href="about.html">OUR OFFERS</a></li>
+      <li><a href="team.html">WHO WE ARE</a></li>
+      <li><a href="contact.html">CONTACT</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- Main Content -->
+<div id="content">
+  <br>
+  <p>
+    We are a group of students pursuing Transformation Studies.
+    Which means: we’re experts at transforming minds — and students.
+    NGOs, NPOs, NTOs, OGNs, OCNs. Referral only.
+    You will meet us during the process.
+  </p>
+</div>
+
+<!-- Overlay lines -->
+<div id="overlay"></div>
+
+<!-- Final Text -->
+<div id="final-text">
+  <p>
+    “as soon as we renounce fiction and illusion, we lose reality itself; the moment we subtract fictions from reality, reality itself loses its discursive-logical consistency.”
+    ― Slavoj Žižek <br><br> PROPAGANDA<b>4</b>US - THE PROPAGANDA LAB 2025©
+  </p>
+</div>
+
+<!-- Script for Scroll Effects -->
+<script>
+  const lineCount = 20;
+  const overlay = document.getElementById("overlay");
+  const finalText = document.getElementById("final-text");
+  const lines = [];
+
+  for (let i = 0; i < lineCount; i++) {
+    const line = document.createElement("div");
+    line.className = "line";
+    line.style.top = `${i * (100 / lineCount)}vh`;
+    overlay.appendChild(line);
+    lines.push(line);
+  }
+
+  // Hide/show header on mobile when scrolling down/up
+  let lastScrollTop = 0;
+  const header = document.getElementById("main-header");
+
+  window.addEventListener("scroll", () => {
+    const scrollTop = window.scrollY;
+    const docHeight = document.body.scrollHeight - window.innerHeight;
+    const scrollFraction = scrollTop / docHeight;
+
+    const bgColor = 400 * scrollFraction;
+    document.body.style.backgroundColor = `rgb(${bgColor}, ${bgColor}, ${bgColor})`;
+    document.body.style.color = scrollFraction > 0.5 ? 'black' : 'white';
+
+    const activationThreshold = 0.8;
+
+    if (scrollFraction > activationThreshold) {
+      const adjustedFraction = (scrollFraction - activationThreshold) / (1 - activationThreshold);
+
+      lines.forEach((line, i) => {
+        const triggerPoint = (i + 0.1) / lineCount;
+        if (adjustedFraction > triggerPoint * 0.5) {
+          line.style.opacity = "1";
+          line.style.height = `${1 + (adjustedFraction - triggerPoint) * 75}px`;
+        } else {
+          line.style.opacity = "0";
+          line.style.height = "0px";
+        }
+      });
+    } else {
+      lines.forEach(line => {
+        line.style.opacity = "0";
+        line.style.height = "0px";
+      });
+    }
+
+    finalText.style.opacity = scrollFraction >= 1 ? "1" : "0";
+
+    // Header behavior on mobile only
+    if (window.innerWidth <= 768) {
+      if (scrollTop > lastScrollTop) {
+        header.style.transform = "translateY(-100%)"; // hide
+      } else {
+        header.style.transform = "translateY(0)"; // show
+      }
+      lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
+    }
+  });
+</script>
+
+</body>
+</html>
