@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>E-Bike Supply Chain Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #f9fafb; }
+    .node { transition: all 0.2s ease; }
+    .node:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .selected { border: 3px solid #3b82f6 !important; }
+    svg.overlay { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
+    .eligible { border: 3px solid #10b981 !important; }
+    .ineligible { border: 3px solid #ef4444 !important; }
+    .failed { opacity: 0.3; }
+  </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden">
+  <svg class="overlay w-full h-full">
+  <circle cx="50%" cy="50%" r="180" stroke="#d1d5db" stroke-dasharray="4 4" fill="none" />
+  <circle cx="50%" cy="50%" r="320" stroke="#d1d5db" stroke-dasharray="4 4" fill="none" />
+  <circle cx="50%" cy="50%" r="460" stroke="#d1d5db" stroke-dasharray="4 4" fill="none" />
+</svg>
+  <svg id="svgCanvas" class="absolute top-0 left-0 w-full h-full pointer-events-none z-10"></svg>
+  <div id="game" class="absolute w-full h-full z-20"></div>
+  <div id="statsBox" class="hidden fixed top-4 right-4 bg-white p-4 rounded-xl shadow-xl border text-sm font-mono">
+    <div><strong>Total CO₂:</strong> <span id="totalCarbon"></span></div>
+    <div><strong>Total Cost:</strong> <span id="totalCost"></span></div>
+  </div>
+  <div id="failureBox" class="hidden fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-red-100 border border-red-400 text-red-700 px-6 py-3 rounded-lg shadow-lg z-40">
+    ❌ Supply Chain Failed
+  </div>
+  <button id="simulateBtn" class="hidden fixed top-4 right-4 mt-2 px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 z-30">
+    Simulate
+  </button>
+  <script>
+    const game = document.getElementById("game");
+    const svg = document.getElementById("svgCanvas");
+    const statsBox = document.getElementById("statsBox");
+    const totalCostEl = document.getElementById("totalCost");
+    const totalCarbonEl = document.getElementById("totalCarbon");
+    const simulateBtn = document.getElementById("simulateBtn");
+    const failureBox = document.getElementById("failureBox");
+
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+
+    const subtypeList = ["Battery", "Motor", "Frame", "Electronics", "Brakes"];
+    const intensities = [
+      { cost: 1, carbon: 3 },
+      { cost: 2, carbon: 2 },
+      { cost: 3, carbon: 1 },
+    ];
+
+    let idCounter = 1;
+    const supplierNodes = subtypeList.flatMap((type) =>
+      intensities.map((impact, j) => ({
+        id: idCounter++,
+        type: "Supplier",
+        subtype: type,
+        label: `${type} ${String.fromCharCode(65 + j)}`,
+        cost: impact.cost,
+        carbon: impact.carbon,
+      }))
+    );
+
+    const manufacturerNodes = [
+      { id: idCounter++, type: "Manufacturer", label: "M1", cost: 1, carbon: 3 },
+      { id: idCounter++, type: "Manufacturer", label: "M2", cost: 2, carbon: 2 },
+      { id: idCounter++, type: "Manufacturer", label: "M3", cost: 3, carbon: 1 },
+    ];
+
+    const distributorNodes = [
+      { id: idCounter++, type: "Distributor", label: "D1", cost: 1, carbon: 3 },
+      { id: idCounter++, type: "Distributor", label: "D2", cost: 3, carbon: 1 },
+    ];
+
+    const customerNode = {
+      id: idCounter++, type: "Customer", label: "Customer", x: centerX - 48, y: centerY - 48
+    };
+
+    const allNodes = [...supplierNodes, ...manufacturerNodes, ...distributorNodes, customerNode];
+    let connections = [];
+    let selectedNode = null;
+
+    function createNode(nodeData, i, total, ring) {
+      const el = document.createElement("div");
+      el.className = "node absolute w-28 h-28 text-[10px] text-center flex flex-col items-center justify-center rounded-full bg-white border-2 border-gray-300 font-semibold";
+      el.dataset.id = nodeData.id;
+      el.dataset.type = nodeData.type;
+
+      if (nodeData.type !== "Customer") {
+        const angle = (2 * Math.PI * i) / total;
+        nodeData.x = centerX + ring * Math.cos(angle) - 56;
+        nodeData.y = centerY + ring * Math.sin(angle) - 56;
+      }
+
+      el.style.left = `${nodeData.x}px`;
+      el.style.top = `${nodeData.y}px`;
+      el.innerHTML = `
+        <div class="font-bold">${nodeData.label}</div>
+        <div class="text-gray-500">${nodeData.subtype || nodeData.type}</div>
+        ${nodeData.cost ? `<div>💰 ${nodeData.cost} | 🌍 ${nodeData.carbon}</div>` : ''}
+      `;
+
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        if (selectedNode && selectedNode !== el) {
+          const from = selectedNode;
+          const to = el;
+          const fromData = getNode(from);
+          const toData = getNode(to);
+          if (toData && fromData && typeOrder(toData.type) === typeOrder(fromData.type) + 1) {
+            connections.push({ from: fromData.id, to: toData.id });
+            drawConnections();
+            validateEligibility();
+            checkStats();
+          }
+          from.classList.remove("selected");
+          selectedNode = null;
+        } else {
+          if (selectedNode) selectedNode.classList.remove("selected");
+          el.classList.add("selected");
+          selectedNode = el;
+        }
+      });
+
+      game.appendChild(el);
+    }
+
+    function typeOrder(type) {
+      return ["Supplier", "Manufacturer", "Distributor", "Customer"].indexOf(type);
+    }
+
+    function getNode(el) {
+      const id = parseInt(el.dataset.id);
+      return allNodes.find(n => n.id === id);
+    }
+
+    function drawConnections() {
+      svg.innerHTML = "";
+      connections.forEach(({ from, to }) => {
+        const elFrom = document.querySelector(`[data-id='${from}']`).getBoundingClientRect();
+        const elTo = document.querySelector(`[data-id='${to}']`).getBoundingClientRect();
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", elFrom.left + 56);
+        line.setAttribute("y1", elFrom.top + 56);
+        line.setAttribute("x2", elTo.left + 56);
+        line.setAttribute("y2", elTo.top + 56);
+        line.setAttribute("stroke", "#3b82f6");
+        line.setAttribute("stroke-width", "2");
+        svg.appendChild(line);
+      });
+    }
+
+    function validateEligibility() {
+      manufacturerNodes.forEach(m => {
+        const incoming = connections.filter(c => c.to === m.id).map(c => getNodeById(c.from));
+        const types = new Set(incoming.map(n => n.subtype));
+        const nodeEl = document.querySelector(`[data-id='${m.id}']`);
+        if (subtypeList.every(type => types.has(type))) {
+          nodeEl.classList.add("eligible");
+          nodeEl.classList.remove("ineligible");
+        } else {
+          nodeEl.classList.remove("eligible");
+          nodeEl.classList.remove("ineligible");
+        }
+      });
+    }
+
+    function getNodeById(id) {
+      return allNodes.find(n => n.id === id);
+    }
+
+    function checkStats() {
+  const customerConnected = checkSupplyChainValid();
+  simulateBtn.classList.toggle("hidden", !customerConnected);
+      const validManufacturers = manufacturerNodes.filter(m => {
+        const el = document.querySelector(`[data-id='${m.id}']`);
+        return el.classList.contains("eligible");
+      });
+
+      const validDistributors = distributorNodes.filter(d =>
+        connections.some(c => validManufacturers.some(m => c.from === m.id && c.to === d.id))
+      );
+
+      const customerLinks = connections.filter(c => c.to === customerNode.id && validDistributors.some(d => d.id === c.from));
+      if (customerLinks.length > 0) {
+        let totalCost = 0, totalCarbon = 0;
+        const usedSuppliers = new Set();
+        validManufacturers.forEach(m => {
+          const supplierLinks = connections.filter(c => c.to === m.id);
+          supplierLinks.forEach(c => {
+            const s = getNodeById(c.from);
+            const key = `${s.subtype}-${s.id}`;
+            if (!usedSuppliers.has(key)) {
+              totalCost += s.cost;
+              totalCarbon += s.carbon;
+              usedSuppliers.add(key);
+            }
+          });
+        });
+        totalCostEl.textContent = totalCost;
+        totalCarbonEl.textContent = totalCarbon;
+        statsBox.classList.remove("hidden");
+      } else {
+        statsBox.classList.add("hidden");
+      }
+    }
+
+    [...supplierNodes].forEach((n, i) => createNode(n, i, supplierNodes.length, 460));
+    [...manufacturerNodes].forEach((n, i) => createNode(n, i, manufacturerNodes.length, 320));
+    [...distributorNodes].forEach((n, i) => createNode(n, i, distributorNodes.length, 180));
+    createNode(customerNode, 0, 1, 0);
+
+    simulateBtn.addEventListener("click", async () => {
+  const supplierPool = allNodes.filter(n => n.type === "Supplier");
+  const shuffledSuppliers = [...supplierPool].sort(() => 0.5 - Math.random()).slice(0, 7);
+  const remainingPool = allNodes.filter(n => !shuffledSuppliers.includes(n) && n.type !== "Customer");
+  const shuffledRemaining = [...remainingPool].sort(() => 0.5 - Math.random());
+
+  const manufacturerFail = shuffledRemaining.find(n => n.type === "Manufacturer");
+  const distributorFail = shuffledRemaining.find(n => n.type === "Distributor");
+
+  const toFail = [...shuffledSuppliers];
+  if (manufacturerFail) toFail.push(manufacturerFail);
+  if (distributorFail) toFail.push(distributorFail);
+
+  for (const failed of toFail) {
+    const failedEl = document.querySelector(`[data-id='${failed.id}']`);
+    if (failedEl) failedEl.classList.add("failed");
+
+    const index = allNodes.findIndex(n => n.id === failed.id);
+    if (index !== -1) allNodes.splice(index, 1);
+
+    connections = connections.filter(c => c.from !== failed.id && c.to !== failed.id);
+
+    drawConnections();
+    validateEligibility();
+    checkStats();
+
+    const affectedManufacturers = manufacturerNodes.filter(m => {
+      const incoming = connections.filter(c => c.to === m.id).map(c => getNodeById(c.from));
+      const types = new Set(incoming.map(n => n.subtype));
+      return subtypeList.every(type => types.has(type));
+    });
+
+    const validDistributors = distributorNodes.filter(d =>
+      connections.some(c => affectedManufacturers.some(m => c.from === m.id && c.to === d.id))
+    );
+
+    const stillValid = connections.some(c =>
+      validDistributors.some(d => c.from === d.id && c.to === customerNode.id)
+    );
+
+    if (!stillValid) {
+      failureBox.classList.remove("hidden");
+      break;
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  const isValid = checkSupplyChainValid();
+  if (!isValid) failureBox.classList.remove("hidden");
+});
+
+    function checkSupplyChainValid() {
+      const validManufacturers = manufacturerNodes.filter(m => {
+        const incoming = connections.filter(c => c.to === m.id).map(c => getNodeById(c.from));
+        const types = new Set(incoming.map(n => n.subtype));
+        return subtypeList.every(type => types.has(type));
+      });
+
+      const validDistributors = distributorNodes.filter(d =>
+        connections.some(c => validManufacturers.some(m => c.from === m.id && c.to === d.id))
+      );
+
+      return connections.some(c =>
+        validDistributors.some(d => c.from === d.id && c.to === customerNode.id)
+      );
+    }
+  </script>
+</body>
+</html>
