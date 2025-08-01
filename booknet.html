@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>📚 Booknet</title>
+  <style>
+    html, body {
+      margin: 0;
+      font-family: sans-serif;
+      background: white;
+    }
+    #3d-graph {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 40px;
+      left: 0;
+    }
+    #search-box {
+      position: fixed;
+      top: 5px;
+      left: 10px;
+      z-index: 10;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    }
+    #search-input {
+      padding: 6px 10px;
+      font-size: 14px;
+      width: 300px;
+    }
+  </style>
+</head>
+<body>
+  <div id="search-box">
+    🔍 <input id="search-input" type="text" placeholder="Search title, author, or language..." />
+  </div>
+  <div id="3d-graph"></div>
+
+  <script src="https://unpkg.com/three"></script>
+  <script src="https://unpkg.com/3d-force-graph"></script>
+
+  <script>
+    fetch('books.json')
+      .then(res => res.json())
+      .then(graphData => {
+        const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+          .graphData(graphData)
+          .backgroundColor('white')
+          .nodeRelSize(2.5)
+          .nodeLabel(node => `${node.id} (${node.author}, ${node.language})`)
+          .nodeColor(node => node.__color || '#333333')
+          .linkDirectionalArrowLength(4)
+          .linkDirectionalArrowRelPos(1)
+          .linkWidth(link => link.__highlighted ? 2.5 : 0.5)
+          .linkColor(link => link.__highlighted ? link.__color : '#aaa')
+          .linkOpacity(link => link.__visible === false ? 0.05 : 1);
+
+        Graph.d3Force('charge').strength(-30);
+        Graph.d3Force('link').distance(60);
+
+        let lastClickTime = 0;
+        Graph.onNodeClick((node, event) => {
+          const now = Date.now();
+          if (now - lastClickTime < 300) return;
+          lastClickTime = now;
+
+          const wikiQuery = encodeURIComponent(node.id);
+          const url = `https://en.wikipedia.org/wiki/Special:Search?search=${wikiQuery}`;
+          window.open(url, '_blank');
+        });
+
+        let activeNodes = [];
+
+        Graph.onNodeHover(node => {
+          if (!searchInput.value.trim()) {
+            if (node) {
+              activeNodes = [node];
+              highlightConnections(activeNodes);
+            }
+          }
+        });
+
+        const searchInput = document.getElementById('search-input');
+        searchInput.addEventListener('input', () => {
+          const term = searchInput.value.trim().toLowerCase();
+          if (!term) {
+            activeNodes = [];
+            resetGraph();
+            return;
+          }
+
+          const matches = graphData.nodes.filter(n =>
+            n.id.toLowerCase().includes(term) ||
+            n.author.toLowerCase().includes(term) ||
+            (n.language && n.language.toLowerCase().includes(term))
+          );
+
+          if (matches.length > 0) {
+            activeNodes = matches;
+            highlightConnections(matches);
+          } else {
+            activeNodes = [];
+            resetGraph();
+          }
+        });
+
+        function highlightConnections(nodesArray) {
+          if (!nodesArray || nodesArray.length === 0 || nodesArray[0] === null) {
+            resetGraph();
+            return;
+          }
+
+          const matchIds = new Set(nodesArray.map(n => n.id));
+          const linkedTo = new Set();
+          const linkedFrom = new Set();
+
+          graphData.links.forEach(link => {
+            const sourceId = link.source.id || link.source;
+            const targetId = link.target.id || link.target;
+
+            if (matchIds.has(targetId)) linkedTo.add(sourceId);
+            if (matchIds.has(sourceId)) linkedFrom.add(targetId);
+          });
+
+          graphData.nodes.forEach(n => {
+            if (matchIds.has(n.id)) {
+              n.__color = '#ffff00'; // highlight
+            } else if (linkedTo.has(n.id)) {
+              n.__color = '#ff4444'; // incoming
+            } else if (linkedFrom.has(n.id)) {
+              n.__color = '#3399ff'; // outgoing
+            } else {
+              n.__color = '#cccccc'; // dimmed
+            }
+          });
+
+          graphData.links.forEach(link => {
+            const sourceId = link.source.id || link.source;
+            const targetId = link.target.id || link.target;
+
+            const isTo = matchIds.has(targetId);
+            const isFrom = matchIds.has(sourceId);
+
+            link.__highlighted = isTo || isFrom;
+            link.__visible = isTo || isFrom;
+            link.__color = isTo ? '#ff4444' : isFrom ? '#3399ff' : '#888';
+          });
+
+          Graph.refresh();
+        }
+
+        function resetGraph() {
+          graphData.nodes.forEach(n => {
+            n.__color = '#333333';
+          });
+          graphData.links.forEach(l => {
+            l.__highlighted = false;
+            l.__visible = true;
+            l.__color = '#aaa';
+          });
+          Graph.refresh();
+        }
+      });
+  </script>
+</body>
+</html>
